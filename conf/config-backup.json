@@ -1,0 +1,5 @@
+{
+  "VERSION": "1.0.0",
+  "API_KEY": "",
+  "AIR_QUALITY_BASE_URL": "https://airquality.googleapis.com/v1/"
+}
