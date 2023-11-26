@@ -13,7 +13,7 @@ type AirQuality struct {
 type index struct {
 	Code              string `json:"code"`
 	DisplayName       string `json:"displayName"`
-	Aqi               int16  `json:"aqi"`
+	Aqi               int    `json:"aqi"`
 	AqiDisplay        string `json:"aqiDisplay"`
 	Color             color  `json:"color"`
 	Category          string `json:"category"`
@@ -31,13 +31,24 @@ type pollutant struct {
 	Code           string         `json:"code"`
 	DisplayName    string         `json:"displayName"`
 	FullName       string         `json:"fullName"`
-	Concentration  concentration  `json:"concentration"`
+	Concentration  Concentration  `json:"Concentration"`
 	AdditionalInfo additionalInfo `json:"additionalInfo"`
 }
 
-type concentration struct {
-	Value float64 `json:"value"`
-	Units string  `json:"units"`
+type Concentration struct {
+	Value  float64 `json:"value"`
+	Units  string  `json:"units"`
+	Symbol string  `json:"symbol"`
+}
+
+func (c *Concentration) AddSymbol() *Concentration {
+	if c.Units == "PARTS_PER_BILLION" {
+		c.Symbol = "ppb"
+	}
+	if c.Units == "MICROGRAMS_PER_CUBIC_METER" {
+		c.Symbol = "μg/m³"
+	}
+	return c
 }
 
 type additionalInfo struct {
@@ -53,4 +64,10 @@ type healthRecommendations struct {
 	Athletes               string `json:"athletes"`
 	PregnantWomen          string `json:"pregnantWomen"`
 	Children               string `json:"children"`
+}
+
+type AirQualities struct {
+	HoursInfo     []AirQuality `json:"hoursInfo"`
+	RegionCode    string       `json:"regionCode"`
+	NextPageToken string       `json:"nextPageToken"`
 }
