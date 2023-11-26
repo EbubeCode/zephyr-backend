@@ -18,7 +18,7 @@ func GetConfig() Configuration {
 	configuration := Configuration{}
 	err := gonfig.GetConf("./conf/config.json", &configuration)
 	if err != nil {
-		log.Fatal(err)
+		log.Printf("Error loading config: %s", err)
 	}
 
 	return configuration
