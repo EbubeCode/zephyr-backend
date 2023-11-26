@@ -20,6 +20,7 @@ func main() {
 	}
 
 	app.Post("/aqi", appInstance.HandleGetAQI())
+	app.Post("/pollutants", appInstance.HandleGetPollutants())
 	app.Post("/chart", appInstance.HandleChart())
 	app.Get("/", func(c *fiber.Ctx) error {
 		return c.SendFile("./index.html")
