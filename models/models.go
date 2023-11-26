@@ -21,10 +21,10 @@ type index struct {
 }
 
 type color struct {
-	Red   int8 `json:"red"`
-	Green int8 `json:"green"`
-	Blue  int8 `json:"blue"`
-	Alpha int8 `json:"alpha"`
+	Red   float64 `json:"red"`
+	Green float64 `json:"green"`
+	Blue  float64 `json:"blue"`
+	Alpha float64 `json:"alpha"`
 }
 
 type pollutant struct {
