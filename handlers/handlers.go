@@ -253,6 +253,93 @@ func (app *App) HandleGetPollutants() func(c *fiber.Ctx) error {
 	}
 }
 
+func (app *App) HandleGetPollutantsAdditionalInfo() func(c *fiber.Ctx) error {
+	return func(c *fiber.Ctx) error {
+		var request LocationRequest
+		if err := c.BodyParser(&request); err != nil {
+			log.Printf("Invalid request payload: %s\n", err)
+		}
+		if request.Latitude == 0 || request.Longitude == 0 {
+			request.initializeDefaults(app.Config)
+		} else {
+			// Perform reverse geocoding
+			reverseGeocodeRequest := &maps.GeocodingRequest{
+				LatLng: &maps.LatLng{
+					Lat: request.Latitude,
+					Lng: request.Longitude,
+				},
+			}
+
+			reverseGeocodeResult, err := app.MapsClient.ReverseGeocode(context.Background(), reverseGeocodeRequest)
+			if err != nil || len(reverseGeocodeResult) <= 0 {
+				log.Printf("Error decode location: %s\n", err)
+				return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+					"success": false,
+					"error":   "Location not found",
+				})
+			}
+			var countryCode string
+			for _, addressComponent := range reverseGeocodeResult[0].AddressComponents {
+				for _, typeValue := range addressComponent.Types {
+					if typeValue == "country" {
+						countryCode = addressComponent.ShortName
+						break
+					}
+				}
+				if countryCode != "" {
+					break
+				}
+			}
+			address := reverseGeocodeResult[0].FormattedAddress
+			log.Printf("Location: %s\n", address)
+
+			if !isSupportedCountry(countryCode) {
+				log.Printf("Unsupported location %s\n", err)
+				return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+					"success": false,
+					"error":   "Location not supported",
+				})
+			}
+
+		}
+
+		url := fmt.Sprintf("%scurrentConditions:lookup?key=%s", app.Config.AIR_QUALITY_BASE_URL, app.Config.API_KEY)
+		agent := fiber.Post(url)
+		extraComputations := []string{"POLLUTANT_CONCENTRATION", "POLLUTANT_ADDITIONAL_INFO"}
+		agent.JSON(fiber.Map{
+			"location": fiber.Map{
+				"longitude": request.Longitude,
+				"latitude":  request.Latitude,
+			},
+			"extraComputations": extraComputations,
+		}) // set body received by request
+		statusCode, body, errs := agent.Bytes()
+		if len(errs) > 0 || statusCode != 200 {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+				"errs": errs,
+			})
+		}
+		var airQuality models.AirQuality
+		err := json.Unmarshal(body, &airQuality)
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+				"err": err,
+			})
+		}
+		var pollutantValues []interface{}
+		for _, pollutant := range airQuality.Pollutants {
+			pollutantValues = append(pollutantValues, fiber.Map{
+				"pollutantCode":          pollutant.Code,
+				"pollutantDisplayName":   pollutant.DisplayName,
+				"pollutantFullName":      pollutant.FullName,
+				"pollutantConcentration": pollutant.Concentration.AddSymbol(),
+				"pollutantAdditionInfo":  pollutant.AdditionalInfo,
+			})
+		}
+		return c.Status(fiber.StatusOK).JSON(pollutantValues)
+	}
+}
+
 func (app *App) HandleChart() func(c *fiber.Ctx) error {
 	return func(c *fiber.Ctx) error {
 		var request LocationRequest
@@ -365,5 +452,122 @@ func (app *App) HandleChart() func(c *fiber.Ctx) error {
 			"averageDominantPollutantValue": totalDominantPollutantConcentration / float64(len(airQualities.HoursInfo)),
 			"percentageChangeInAqi":         changeInAqi * 100,
 		})
+	}
+}
+
+func (app *App) HandleNearByPlaces() func(c *fiber.Ctx) error {
+	return func(c *fiber.Ctx) error {
+		var request LocationRequest
+		if err := c.BodyParser(&request); err != nil {
+			log.Printf("Invalid request payload: %s\n", err)
+		}
+		if request.Latitude > 0 && request.Longitude > 0 {
+			// Perform reverse geocoding
+			reverseGeocodeRequest := &maps.GeocodingRequest{
+				LatLng: &maps.LatLng{
+					Lat: request.Latitude,
+					Lng: request.Longitude,
+				},
+			}
+
+			reverseGeocodeResult, err := app.MapsClient.ReverseGeocode(context.Background(), reverseGeocodeRequest)
+			if err != nil || len(reverseGeocodeResult) <= 0 {
+				log.Printf("Error decode location: %s\n", err)
+				return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+					"success": false,
+					"error":   "Location not found",
+				})
+			}
+			var countryCode string
+			for _, addressComponent := range reverseGeocodeResult[0].AddressComponents {
+				for _, typeValue := range addressComponent.Types {
+					if typeValue == "country" {
+						countryCode = addressComponent.ShortName
+						break
+					}
+				}
+				if countryCode != "" {
+					break
+				}
+			}
+			address := reverseGeocodeResult[0].FormattedAddress
+			log.Printf("Location: %s\n", address)
+			if !isSupportedCountry(countryCode) {
+				log.Printf("Unsupported location %s\n", err)
+				return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+					"success": false,
+					"error":   "Location not supported",
+				})
+			}
+		}
+		// Define the request parameters
+		radius := 50000 // Radius in meters
+		//types := []string{"restaurant", "bar", "cafe", "park", "store"} // Place types you are interested in
+
+		// Make the nearby search request
+		req := &maps.NearbySearchRequest{
+			Location: &maps.LatLng{Lat: request.Latitude, Lng: request.Latitude},
+			Radius:   uint(radius),
+		}
+
+		resp, err := app.MapsClient.NearbySearch(context.Background(), req)
+		if err != nil {
+			log.Printf("Unsupported location %s\n", err)
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+				"success": false,
+				"error":   "Can't resolve nearby places",
+			})
+		}
+
+		// Print the results with latitude and longitude
+		var aqiValues []interface{}
+		for index, result := range resp.Results {
+			if index == 2 {
+				break
+			}
+			log.Printf("Name: %s, Location: Lat %v, Lng %v\n", result.Name, result.Geometry.Location.Lat, result.Geometry.Location.Lng)
+
+			url := fmt.Sprintf("%scurrentConditions:lookup?key=%s", app.Config.AIR_QUALITY_BASE_URL, app.Config.API_KEY)
+			agent := fiber.Post(url)
+			extraComputations := [1]string{"DOMINANT_POLLUTANT_CONCENTRATION"}
+			agent.JSON(fiber.Map{
+				"location": fiber.Map{
+					"longitude": result.Geometry.Location.Lng,
+					"latitude":  result.Geometry.Location.Lat,
+				},
+				"extraComputations": extraComputations,
+			}) // set body received by request
+			statusCode, body, errs := agent.Bytes()
+			if len(errs) > 0 || statusCode != 200 {
+				return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+					"errs": errs,
+				})
+			}
+			var airQuality models.AirQuality
+			err := json.Unmarshal(body, &airQuality)
+			if err != nil {
+				return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+					"err": err,
+				})
+			}
+			aqiValues = append(aqiValues, fiber.Map{
+				"dateTime":                       airQuality.DateTime,
+				"regionCode":                     airQuality.RegionCode,
+				"aqiCode":                        airQuality.Indexes[0].Code,
+				"aqiDisplayName":                 airQuality.Indexes[0].DisplayName,
+				"aqiValue":                       airQuality.Indexes[0].Aqi,
+				"aqiValueDisplay":                airQuality.Indexes[0].AqiDisplay,
+				"aqiColor":                       airQuality.Indexes[0].Color,
+				"aqiCategory":                    airQuality.Indexes[0].Category,
+				"dominantPollutantCode":          airQuality.Pollutants[0].Code,
+				"dominantPollutantDisplayName":   airQuality.Pollutants[0].DisplayName,
+				"dominantPollutantFullName":      airQuality.Pollutants[0].FullName,
+				"dominantPollutantConcentration": airQuality.Pollutants[0].Concentration,
+				"location":                       result.FormattedAddress,
+				"Name":                           result.Name,
+				"Vicinity":                       result.Vicinity,
+			})
+		}
+		return c.Status(fiber.StatusOK).JSON(aqiValues)
 	}
 }
