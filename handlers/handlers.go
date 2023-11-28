@@ -20,10 +20,11 @@ type App struct {
 }
 
 type LocationRequest struct {
-	Latitude   float64 `json:"latitude"`
-	Longitude  float64 `json:"longitude"`
-	ChartRange string  `json:"chart_range"`
-	TimeZone   string  `json:"timeZone"`
+	Latitude    float64 `json:"latitude"`
+	Longitude   float64 `json:"longitude"`
+	ChartRange  string  `json:"chart_range"`
+	TimeZone    string  `json:"timeZone"`
+	SearchQuery string  `json:"searchQuery"`
 }
 
 func (r *LocationRequest) initializeDefaults(config *conf.Configuration) {
@@ -453,6 +454,55 @@ func (app *App) HandleChart() func(c *fiber.Ctx) error {
 			"percentageChangeInAqi":         changeInAqi * 100,
 		})
 	}
+}
+
+func (app *App) HandleSearch() func(c *fiber.Ctx) error {
+	return func(c *fiber.Ctx) error {
+		var request LocationRequest
+		if err := c.BodyParser(&request); err != nil || request.SearchQuery == "" {
+			log.Printf("Invalid request payload: %s\n", err)
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"success": false,
+				"error":   "Invalid request payload",
+			})
+		}
+		// Perform reverse geocoding
+		testInputRequest := &maps.FindPlaceFromTextRequest{
+			Input:     request.SearchQuery,
+			InputType: maps.FindPlaceFromTextInputTypeTextQuery,
+		}
+		fromTextResponse, err := app.MapsClient.FindPlaceFromText(context.Background(), testInputRequest)
+		if err != nil || len(fromTextResponse.Candidates) <= 0 {
+			log.Printf("Error decode location: %s\n", err)
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+				"success": false,
+				"error":   "No location found",
+			})
+		}
+		var addresses []interface{}
+		for _, result := range fromTextResponse.Candidates {
+			lat := result.Geometry.Location.Lat
+			lng := result.Geometry.Location.Lng
+			timezoneRequest := &maps.TimezoneRequest{
+				Location: &maps.LatLng{Lat: lat, Lng: lng},
+			}
+			var timeZone string
+			timezoneResult, err := app.MapsClient.Timezone(context.Background(), timezoneRequest)
+			if err != nil {
+				log.Printf("Error getting timezone information: %v", err)
+			} else {
+				timeZone = timezoneResult.TimeZoneName
+			}
+			addresses = append(addresses, fiber.Map{
+				"location":  result.FormattedAddress,
+				"longitude": lng,
+				"latitude":  lat,
+				"timeZone":  timeZone,
+			})
+		}
+		return c.Status(fiber.StatusOK).JSON(addresses)
+	}
+
 }
 
 func (app *App) HandleNearByPlaces() func(c *fiber.Ctx) error {

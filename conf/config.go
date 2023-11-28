@@ -8,6 +8,7 @@ import (
 type Configuration struct {
 	VERSION              string
 	AIR_QUALITY_BASE_URL string
+	PLACES_BASE_URL      string
 	API_KEY              string
 	DEFAULT_LONGITUDE    float64
 	DEFAULT_LATITUDE     float64

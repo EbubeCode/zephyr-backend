@@ -1,6 +1,7 @@
 {
   "VERSION": "1.0.0",
   "AIR_QUALITY_BASE_URL": "https://airquality.googleapis.com/v1/",
+  "PLACES_SEARCH_URL": "https://places.googleapis.com/v1/places:searchText",
   "DEFAULT_LATITUDE": 37.419734,
   "DEFAULT_LONGITUDE": -122.0827784
 }

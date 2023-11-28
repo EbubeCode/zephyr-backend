@@ -5,6 +5,7 @@ import (
 	"github.com/Stutern-128/backend/handlers"
 	_ "github.com/Stutern-128/backend/handlers"
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/cors"
 	"googlemaps.github.io/maps"
 	"log"
 )
@@ -19,10 +20,17 @@ func main() {
 		Config:     &config,
 	}
 
+	app.Use(cors.New(cors.Config{
+		AllowOriginsFunc: func(origin string) bool {
+			return true
+		},
+	}))
+
 	app.Post("/aqi", appInstance.HandleGetAQI())
 	app.Post("/pollutants", appInstance.HandleGetPollutants())
 	app.Post("/pollutantsAdditionalInfo", appInstance.HandleGetPollutantsAdditionalInfo())
 	app.Post("/nearbyPlaces", appInstance.HandleNearByPlaces())
+	app.Post("/searchPlaces", appInstance.HandleSearch())
 	app.Post("/chart", appInstance.HandleChart())
 	app.Get("/", func(c *fiber.Ctx) error {
 		return c.SendFile("./index.html")
